@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AssigneeSearchSelect from '@/components/AssigneeSearchSelect.vue';
 import InputError from '@/components/InputError.vue';
 import RichTextEditor from '@/components/RichTextEditor.vue';
 import { Button } from '@/components/ui/button';
@@ -9,16 +10,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PRIORITY_OPTIONS, priorityColorClass } from '@/lib/priority';
 import { STATUS_OPTIONS, statusBadgeClass } from '@/lib/status';
-import type { Priority, Status, Task } from '@/types';
+import type { AssigneeOption, Priority, SharedData, Status, Task } from '@/types';
 import { ChevronDown, Flag } from 'lucide-vue-next';
 import { computed, reactive, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { useForm, usePage } from '@inertiajs/vue3';
 
 export interface NewTaskPayload {
     task_name: string;
     task_description: string;
     due_date: string;
     priority: Priority;
+    assign_to?: number;
 }
 
 export interface UpdateTaskPayload extends NewTaskPayload {
@@ -43,6 +45,7 @@ interface FormState {
     due_date: string | undefined;
     priority: Priority;
     status: Status;
+    assignee: AssigneeOption | null;
 }
 
 function defaultForm(): FormState {
@@ -52,6 +55,7 @@ function defaultForm(): FormState {
         due_date: undefined,
         priority: 'Normal',
         status: 'Pending',
+        assignee: null,
     };
 }
 
@@ -69,10 +73,14 @@ function formStateFromTask(task: Task): FormState {
         due_date: mdyToIso(task.due_date),
         priority: task.priority,
         status: task.status,
+        assignee: task.assign_to ? { id: task.assign_to.id, name: task.assign_to.name, email: '' } : null,
     };
 }
 
 const isEditMode = computed(() => !!props.task?.id);
+
+const page = usePage<SharedData>();
+const isAdmin = computed(() => page.props.auth.user.user_role_id === 1);
 
 const form = reactive<FormState>(defaultForm());
 const errors = reactive<Partial<Record<keyof FormState, string>>>({});
@@ -97,6 +105,7 @@ function validate(): boolean {
     errors.task_description = stripHtml(form.task_description) ? undefined : 'Task description is required.';
     errors.due_date = form.due_date ? undefined : 'Due date is required.';
     errors.priority = form.priority ? undefined : 'Priority is required.';
+    errors.assignee = !isAdmin.value || form.assignee ? undefined : 'Assignee is required.';
 
     return !Object.values(errors).some(Boolean);
 }
@@ -111,6 +120,7 @@ function submitTask() {
         task_description: form.task_description,
         due_date: form.due_date,
         priority: form.priority,
+        ...(isAdmin.value && form.assignee ? { assign_to: form.assignee.id } : {}),
     };
 
     if (isEditMode.value && props.task) {
@@ -189,6 +199,12 @@ function submitTask() {
                         </DropdownMenu>
                         <InputError :message="errors.priority" />
                     </div>
+                </div>
+
+                <div v-if="isAdmin" class="grid gap-2">
+                    <Label>Assign To</Label>
+                    <AssigneeSearchSelect v-model="form.assignee" />
+                    <InputError :message="errors.assignee" />
                 </div>
 
                 <div v-if="isEditMode" class="grid gap-2">

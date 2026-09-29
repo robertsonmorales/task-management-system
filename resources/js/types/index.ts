@@ -38,9 +38,16 @@ export interface User {
     name: string;
     email: string;
     avatar?: string;
+    user_role_id: number;
     email_verified_at: string | null;
     created_at: string;
     updated_at: string;
+}
+
+export interface AssigneeOption {
+    id: number;
+    name: string;
+    email: string;
 }
 
 export type Priority = 'Low' | 'Normal' | 'High' | 'Urgent';
@@ -50,11 +57,28 @@ export type Status = 'Pending' | 'In Progress' | 'Completed';
 export interface Task {
     id: number;
     task_name: string;
+    assign_to: {
+        id: number;
+        name: string;
+    } | null;
     task_description: string;
     due_date: string;
     status: Status;
     priority: Priority;
 }
+
+export interface TaskFilters {
+    search: string | null;
+    priority: Priority | null;
+    status: Status | null;
+    due: string | null;
+    sort: TaskSortColumn | null;
+    direction: SortDirection | null;
+}
+
+export type TaskSortColumn = 'task_name' | 'assignee' | 'due_date' | 'priority' | 'status';
+
+export type SortDirection = 'asc' | 'desc';
 
 export interface PaginationLink {
     url: string | null;
