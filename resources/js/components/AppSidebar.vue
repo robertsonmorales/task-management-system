@@ -1,41 +1,44 @@
 <script setup lang="ts">
-import NavFooter from '@/components/NavFooter.vue';
+// import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { type NavItem } from '@/types';
-import { computed } from "vue";
-import { Link, usePage } from '@inertiajs/vue3';
+import { type NavItem, type SharedData } from '@/types';
+// import { computed } from "vue";
+import { 
+    Link, 
+    usePage 
+} from '@inertiajs/vue3';
 import { 
     // BookOpen, Folder, 
-    LayoutGrid, ListTodo, ListChecks
+    LayoutGrid, ListTodo, 
+    // Settings,
+    // ListChecks
 } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
-const page = usePage();
-const auth = page.props.auth as { user: { user_role_id: number } };
-// const isRegUser = auth.user.user_role_id === 2;
-// const isAdmin = auth.user.user_role_id === 1;
+const page = usePage<SharedData>();
+const isAdmin = page.props.auth.user.user_role_id === 1;
 
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
-        href: '/dashboard',
+        href: isAdmin ? '/admin-dashboard' : '/dashboard',
         icon: LayoutGrid,
         isActive: true
     },
     {
-        title: 'My Tasks',
+        title: 'Tasks',
         href: '/tasks',
         icon: ListTodo,
-        isActive: true // isRegUser
+        isActive: true
     },
-    {
-        title: 'All Tasks',
-        href: '/all-tasks',
-        icon: ListChecks,
-        isActive: true // isAdmin
-    },
+    // {
+    //     title: 'All Tasks',
+    //     href: '/all-tasks',
+    //     icon: ListChecks,
+    //     isActive: isAdmin
+    // },
 ];
 
 // const footerNavItems: NavItem[] = [

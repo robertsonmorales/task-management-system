@@ -20,12 +20,12 @@ export interface NewTaskPayload {
     task_description: string;
     due_date: string;
     priority: Priority;
+    status: Status;
     assign_to?: number;
 }
 
 export interface UpdateTaskPayload extends NewTaskPayload {
     id: number;
-    status: Status;
 }
 
 const props = defineProps<{
@@ -120,11 +120,12 @@ function submitTask() {
         task_description: form.task_description,
         due_date: form.due_date,
         priority: form.priority,
+        status: form.status,
         ...(isAdmin.value && form.assignee ? { assign_to: form.assignee.id } : {}),
     };
 
     if (isEditMode.value && props.task) {
-        const payload: UpdateTaskPayload = { ...basePayload, id: props.task.id, status: form.status };
+        const payload: UpdateTaskPayload = { ...basePayload, id: props.task.id };
 
         useForm(payload as Record<string, any>).put(route('tasks.update', String(payload.id)));
 
@@ -141,7 +142,7 @@ function submitTask() {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-lg">
+        <DialogContent class="h-[100dvh] max-h-[100dvh] content-start overflow-y-auto sm:h-auto sm:max-h-[90vh] sm:max-w-lg">
             <form class="space-y-6" @submit.prevent="submitTask">
                 <DialogHeader>
                     <DialogTitle>{{ isEditMode ? 'Edit Task' : 'Create Task' }}</DialogTitle>
@@ -166,7 +167,7 @@ function submitTask() {
                     <InputError :message="errors.task_description" />
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div class="grid gap-2">
                         <Label>Due Date</Label>
                         <DatePicker v-model="form.due_date" />
@@ -207,7 +208,7 @@ function submitTask() {
                     <InputError :message="errors.assignee" />
                 </div>
 
-                <div v-if="isEditMode" class="grid gap-2">
+                <div class="grid gap-2">
                     <Label>Status</Label>
                     <DropdownMenu>
                         <DropdownMenuTrigger as-child>

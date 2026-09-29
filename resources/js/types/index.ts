@@ -61,10 +61,65 @@ export interface Task {
         id: number;
         name: string;
     } | null;
+    created_by?: {
+        id: number;
+        name: string;
+    } | null;
     task_description: string;
     due_date: string;
     status: Status;
     priority: Priority;
+}
+
+export type AttentionReason = 'overdue' | 'today' | 'high_priority';
+
+export interface DashboardTask extends Task {
+    attention?: AttentionReason;
+}
+
+/**
+ * Filter tasks by one user ("id" is the user id) or by tasks nobody is assigned to ("id" is "unassigned").
+ */
+export interface AssigneeFilter {
+    id: string;
+    name: string;
+}
+
+export interface AdminSummary {
+    total: number;
+    inProgress: number;
+    overdue: number;
+    completed: number;
+}
+
+export interface AdminAttention {
+    overdue: number;
+    unassigned: number;
+    highPriorityDueToday: number;
+}
+
+export type AnalyticsPeriod = 'today' | 'week' | 'month';
+
+export interface StatusBreakdown {
+    overdue: number;
+    pending: number;
+    inProgress: number;
+    completed: number;
+}
+
+export interface UserWorkload {
+    id: number;
+    name: string;
+    open: number;
+    inProgress: number;
+    overdue: number;
+}
+
+export interface DashboardSummary {
+    overdue: number;
+    dueToday: number;
+    upcoming: number;
+    open: number;
 }
 
 export interface TaskFilters {
@@ -72,6 +127,7 @@ export interface TaskFilters {
     priority: Priority | null;
     status: Status | null;
     due: string | null;
+    assignee: AssigneeFilter | null;
     sort: TaskSortColumn | null;
     direction: SortDirection | null;
 }

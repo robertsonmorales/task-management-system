@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Task;
 use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Log;
@@ -50,20 +50,14 @@ class TaskController extends Controller
             'assign_to',
             'created_at',
             'updated_at',
-        ])->with('assignee:id,name')->myTasks();
+        ])->with(['assignee:id,name', 'creator:id,name'])->myTasks();
 
         $canSortByAssignee = $request->user()->isAdmin();
         $sort = $this->resolveSort($request, $canSortByAssignee);
 
         $tasks = $this->sort($this->search($query, $request), $sort)->paginate($perPage)
             ->withQueryString()
-            ->through(function ($item) {
-                $item['due_date'] = Carbon::parse($item['due_date'])->format('m/d/Y');
-                $item->setAttribute('assign_to', $item->assignee?->only(['id', 'name']));
-                $item->unsetRelation('assignee');
-
-                return $item;
-            });
+            ->through(fn (Task $task) => $task->toListItem());
 
         return inertia('tasks/Index', [
             'tasks' => $tasks,
@@ -72,6 +66,7 @@ class TaskController extends Controller
                 'priority' => $request->input('priority'),
                 'status' => $request->input('status'),
                 'due' => $request->input('due'),
+                'assignee' => $this->assigneeFilter($request),
                 'sort' => $sort['column'],
                 'direction' => $sort['direction'],
             ],
@@ -98,6 +93,7 @@ class TaskController extends Controller
                 'task_description' => 'nullable|max:5000',
                 'due_date' => 'nullable|date',
                 'priority' => 'required|in:Low,Normal,High,Urgent',
+                'status' => 'nullable|in:Pending,In Progress,Completed',
                 'assign_to' => $this->assigneeRules($request),
             ]);
 
@@ -108,15 +104,15 @@ class TaskController extends Controller
                 'priority' => sanitizer($request->input('priority')),
                 'user_id' => auth()->id(),
                 'assign_to' => $this->resolveAssigneeId($request),
-                'status' => 'Pending',
+                'status' => $request->input('status') ?? 'Pending',
             ]);
 
-            $this->goToLandingPage(true, 'Task added successfully.');
+            return $this->goToLandingPage(true, 'Task added successfully.');
 
         } catch (\Throwable $th) {
             Log::error($th->getMessage());
 
-            $this->goToLandingPage(false, $th->getMessage());
+            return $this->goToLandingPage(false, $th->getMessage());
         }
     }
 
@@ -161,11 +157,11 @@ class TaskController extends Controller
                 'updated_by' => auth()->id(),
             ]);
 
-            $this->goToLandingPage(true, 'Task updated successfully.');
+            return $this->goToLandingPage(true, 'Task updated successfully.');
         } catch (\Throwable $th) {
             Log::error($th->getMessage());
 
-            $this->goToLandingPage(false, $th->getMessage());
+            return $this->goToLandingPage(false, $th->getMessage());
         }
     }
 
@@ -177,20 +173,23 @@ class TaskController extends Controller
         try {
             $this->task->find($id)->delete();
 
-            $this->goToLandingPage(true, 'Task deleted successfully.');
+            return $this->goToLandingPage(true, 'Task deleted successfully.');
         } catch (\Throwable $th) {
             Log::error($th->getMessage());
 
-            $this->goToLandingPage(false, $th->getMessage());
+            return $this->goToLandingPage(false, $th->getMessage());
         }
     }
 
-    private function goToLandingPage(bool $success, string $message)
+    /**
+     * Flash the outcome and return to the page the request came from (the Tasks page or the Dashboard).
+     */
+    private function goToLandingPage(bool $success, string $message): RedirectResponse
     {
         Session::flash('success', $success);
         Session::flash('message', $message);
 
-        return to_route('tasks.index');
+        return back();
     }
 
     /**
@@ -213,11 +212,17 @@ class TaskController extends Controller
             : (int) auth()->id();
     }
 
-    public function markAsCompleted(string $id)
+    /**
+     * Mark one of the current user's tasks as completed.
+     */
+    public function markAsCompleted(string $id): RedirectResponse
     {
-        $this->task->findOrFail($id)->update([
+        $this->task->myTasks()->findOrFail($id)->update([
             'status' => 'Completed',
+            'updated_by' => auth()->id(),
         ]);
+
+        return $this->goToLandingPage(true, 'Task marked as completed.');
     }
 
     /**
@@ -240,21 +245,43 @@ class TaskController extends Controller
             $query->status($request->input('status'));
         }
 
-        $today = Carbon::today();
+        $query->due($request->input('due'));
 
-        match ($request->input('due')) {
-            'overdue' => $query->where('due_date', '<', $today->toDateString())->where('status', '!=', 'Completed'),
-            'today' => $query->whereDate('due_date', $today),
-            'tomorrow' => $query->whereDate('due_date', $today->copy()->addDay()),
-            'next_7_days' => $query->whereBetween('due_date', [$today->toDateString(), $today->copy()->addDays(7)->toDateString()]),
-            'this_week' => $query->whereBetween('due_date', [$today->copy()->startOfWeek()->toDateString(), $today->copy()->endOfWeek()->toDateString()]),
-            'next_week' => $query->whereBetween('due_date', [$today->copy()->addWeek()->startOfWeek()->toDateString(), $today->copy()->addWeek()->endOfWeek()->toDateString()]),
-            'this_month' => $query->whereBetween('due_date', [$today->copy()->startOfMonth()->toDateString(), $today->copy()->endOfMonth()->toDateString()]),
-            'next_month' => $query->whereBetween('due_date', [$today->copy()->addMonthNoOverflow()->startOfMonth()->toDateString(), $today->copy()->addMonthNoOverflow()->endOfMonth()->toDateString()]),
-            default => null,
-        };
+        if ($request->user()->isAdmin() && $this->isValidAssigneeFilter($request->input('assignee'))) {
+            $query->assignedTo($request->input('assignee'));
+        }
 
         return $query;
+    }
+
+    /**
+     * The active assignee filter with a display name for its chip, or null when not filtering by assignee.
+     *
+     * @return array{id: string, name: string}|null
+     */
+    private function assigneeFilter(Request $request): ?array
+    {
+        $assignee = $request->input('assignee');
+
+        if (! $request->user()->isAdmin() || ! $this->isValidAssigneeFilter($assignee)) {
+            return null;
+        }
+
+        if ($assignee === 'unassigned') {
+            return ['id' => 'unassigned', 'name' => 'Unassigned'];
+        }
+
+        $name = User::whereKey($assignee)->value('name');
+
+        return $name ? ['id' => $assignee, 'name' => $name] : null;
+    }
+
+    /**
+     * The assignee filter accepts "unassigned" or a user id.
+     */
+    private function isValidAssigneeFilter(mixed $assignee): bool
+    {
+        return $assignee === 'unassigned' || (is_string($assignee) && ctype_digit($assignee));
     }
 
     /**

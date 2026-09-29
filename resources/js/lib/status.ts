@@ -7,13 +7,13 @@ export function statusBadgeClass(status: string): string {
 
     switch (status) {
         case 'Pending':
-            state = 'bg-blue-500 border border-blue-400';
+            state = 'bg-blue-500 border border-blue-600';
             break;
         case 'In Progress':
-            state = 'bg-yellow-600 border border-yellow-500';
+            state = 'bg-yellow-600 border border-yellow-700';
             break;
         case 'Completed':
-            state = 'bg-green-700 border border-green-600';
+            state = 'bg-green-700 border border-green-700';
             break;
         default:
             break;

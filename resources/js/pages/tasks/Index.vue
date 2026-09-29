@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import CreateTaskDialog from '@/components/CreateTaskDialog.vue';
+import DashboardTaskList from '@/components/DashboardTaskList.vue';
 import DeleteTaskDialog from '@/components/DeleteTaskDialog.vue';
 import FilterTasksDialog, { type AppliedFilters } from '@/components/FilterTasksDialog.vue';
 import PageSizeDropdown from '@/components/PageSizeDropdown.vue';
+import TaskDetailSheet from '@/components/TaskDetailSheet.vue';
 import Pagination from '@/components/Pagination.vue';
 import Button from '@/components/ui/button/Button.vue';
 import { Input } from '@/components/ui/input';
@@ -15,13 +17,15 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import AppLayout from '@/layouts/AppLayout.vue';
+import StatusIndicator from "@/components/StatusIndicator.vue";
+import PriorityIndicator from '@/components/PriorityIndicator.vue';
+
 import { dueDateLabel } from '@/lib/due-date';
-import { priorityColorClass } from '@/lib/priority';
-import { statusBadgeClass } from '@/lib/status';
-import { type BreadcrumbItem, type Paginated, type Task, type TaskFilters, type TaskSortColumn } from '@/types';
-import { Head, router } from '@inertiajs/vue3';
+import { describeDueDate } from '@/lib/due-date';
+import { type BreadcrumbItem, type Paginated, type SharedData, type Task, type TaskFilters, type TaskSortColumn } from '@/types';
+import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { watchDebounced } from '@vueuse/core';
-import { ArrowDown, ArrowUp, ArrowUpDown, EllipsisVertical, Flag, ListFilter, Pencil, Search, Trash, Check, X, Notebook } from 'lucide-vue-next';
+import { Plus, ArrowDown, ArrowUp, ArrowUpDown, EllipsisVertical, ListFilter, Pencil, Search, Trash, Check, X, Notebook } from 'lucide-vue-next';
 import { computed, nextTick, ref } from 'vue';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -37,6 +41,9 @@ const props = defineProps<{
     canSortByAssignee: boolean;
 }>();
 
+const page = usePage<SharedData>();
+const isAdmin = computed(() => page.props.auth.user.user_role_id === 1);
+
 type QueryOverrides = Partial<Record<keyof TaskFilters | 'per_page', string | number | null>>;
 
 /**
@@ -45,6 +52,7 @@ type QueryOverrides = Partial<Record<keyof TaskFilters | 'per_page', string | nu
 function visit(overrides: QueryOverrides = {}) {
     const query: Record<string, string | number | null> = {
         ...props.filters,
+        assignee: props.filters.assignee?.id ?? null,
         search: search.value,
         per_page: props.tasks.per_page,
         ...overrides,
@@ -87,7 +95,7 @@ function clearSearch() {
 const filterDialogOpen = ref(false);
 
 function applyFilters(filters: AppliedFilters) {
-    visit(filters);
+    visit({ ...filters, assignee: filters.assignee?.id ?? null });
 }
 
 const activeFilterChips = computed(() => {
@@ -105,6 +113,10 @@ const activeFilterChips = computed(() => {
         chips.push({ key: 'due', label: `Due: ${dueDateLabel(props.filters.due)}` });
     }
 
+    if (props.filters.assignee) {
+        chips.push({ key: 'assignee', label: `Assignee: ${props.filters.assignee.name}` });
+    }
+
     return chips;
 });
 
@@ -113,7 +125,7 @@ function removeFilter(key: keyof AppliedFilters) {
 }
 
 function clearAllFilters() {
-    visit({ priority: null, status: null, due: null });
+    visit({ priority: null, status: null, due: null, assignee: null });
 }
 
 interface TableColumn {
@@ -170,12 +182,24 @@ function openEditDialog(task: Task) {
     taskDialogOpen.value = true;
 }
 
+const detailOpen = ref(false);
+const selectedTask = ref<Task | null>(null);
+
+function openTaskDetail(task: Task) {
+    selectedTask.value = task;
+    detailOpen.value = true;
+}
+
 const deleteDialogOpen = ref(false);
 const deletingTask = ref<Task | null>(null);
 
 function openDeleteDialog(task: Task) {
     deletingTask.value = task;
     deleteDialogOpen.value = true;
+}
+
+function markAsCompleted(task: Task) {
+    useForm({}).patch(route('tasks.complete', { task: task.id }), { preserveScroll: true });
 }
 </script>
 
@@ -218,7 +242,11 @@ function openDeleteDialog(task: Task) {
                         <ListFilter class="size-4" />
                         Filter
                     </Button>
-                    <Button size="sm" @click="openCreateDialog">Add Task</Button>
+                    <Button size="sm" class="hidden shrink-0 md:inline-flex" @click="openCreateDialog">
+                        <Plus />
+                        Create Task
+                    </Button>
+                    
                 </div>
             </div>
 
@@ -244,7 +272,7 @@ function openDeleteDialog(task: Task) {
             </div>
 
             <div class="relative flex-1 rounded-xl border border-sidebar-border/70 dark:border-sidebar-border md:min-h-min">
-                <table class="w-full">
+                <table class="hidden w-full md:table">
                     <thead>
                         <tr>
                             <th
@@ -267,6 +295,12 @@ function openDeleteDialog(task: Task) {
                                 <template v-else>{{ column.label }}</template>
                             </th>
                             <th
+                                v-if="isAdmin"
+                                class="border-b border-sidebar-border px-4 py-2 text-left text-xs font-semibold text-gray-500 dark:text-gray-400"
+                            >
+                                Created By
+                            </th>
+                            <th
                                 class="border-b border-sidebar-border px-4 py-2 text-left text-xs font-semibold text-gray-500 dark:text-gray-400"
                             ></th>
                         </tr>
@@ -274,22 +308,21 @@ function openDeleteDialog(task: Task) {
                     <tbody>
                         <tr v-for="task in tasks.data" :key="task.id">
                             <td class="border-b border-sidebar-border px-4 py-2 text-sm font-medium">
-                                <div class="cursor-pointer hover:text-blue-900" @click="openEditDialog(task)">{{ task.task_name }}</div>
+                                <button type="button" class="text-left hover:text-blue-900 lg:truncate lg:w-80" @click="openTaskDetail(task)">{{ task.task_name }}</button>
                             </td>
-                            <td class="border-b border-sidebar-border px-4 py-2 text-sm font-medium">
-                                {{ task.assign_to?.name ?? 'Unassigned' }}
+                            <td class="border-b border-sidebar-border px-4 py-2 text-sm font-medium flex items-center gap-2">
+                                <div class="bg-primary text-white size-6 flex text-xs uppercase items-center justify-center rounded-full">{{ task.assign_to?.name.charAt(0) }}</div>
+                                <span>{{ task.assign_to?.name ?? 'Unassigned' }}</span>
                             </td>
-                            <td class="border-b border-sidebar-border px-4 py-2 text-sm">{{ task.due_date }}</td>
+                            <td class="border-b border-sidebar-border px-4 py-2 text-sm">{{ describeDueDate(task.due_date).label }}</td>
                             <td class="border-b border-sidebar-border px-4 py-2 text-sm">
-                                <div class="flex items-center gap-x-2">
-                                    <Flag :class="`${priorityColorClass(task.priority)} size-4`" />
-                                    <span>{{ task.priority }}</span>
-                                </div>
+                                <PriorityIndicator :priority="task.priority" />
                             </td>
                             <td class="border-b border-sidebar-border px-4 py-2 text-sm">
-                                <div :class="`${statusBadgeClass(task.status)}`">
-                                    {{ task.status }}
-                                </div>
+                                <StatusIndicator :status="task.status" />
+                            </td>
+                            <td v-if="isAdmin" class="border-b border-sidebar-border px-4 py-2 text-sm font-medium text-muted-foreground">
+                                {{ task.created_by?.name ?? '�' }}
                             </td>
                             <td>
                                 <DropdownMenu>
@@ -313,11 +346,12 @@ function openDeleteDialog(task: Task) {
                                                 </Button>
                                             </DropdownMenuItem>
                                         </DropdownMenuGroup>
-                                        <DropdownMenuGroup>
+                                        <DropdownMenuGroup v-if="task.status !== 'Completed'">
                                             <DropdownMenuItem :as-child="true">
                                                 <Button
                                                     variant="ghost"
                                                     class="flex w-full cursor-pointer items-center justify-start"
+                                                    @click="markAsCompleted(task)"
                                                 >
                                                     <Check class="mr-2 h-4 w-4" />
                                                     <span>Mark as Completed</span>
@@ -340,20 +374,29 @@ function openDeleteDialog(task: Task) {
                             </td>
                         </tr>
                         <tr v-if="tasks.data.length <= 0">
-                            <td colspan="6" class="text-center w-full h-full py-10">
+                            <td :colspan="isAdmin ? 7 : 6" class="text-center w-full h-full py-10">
                                 <div class="flex items-center flex-col gap-4">
                                     <Notebook />
                                     <p class="text-sm text-neutral-600">You have no assigned Task yet.</p>
-                                    <Button size="sm" @click="openCreateDialog">Add Task</Button>
+                                    <Button size="sm" class="hidden shrink-0 md:inline-flex" @click="openCreateDialog">
+                                        <Plus />
+                                        Create Task
+                                    </Button>
                                 </div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
 
+                <!-- Mobile: cards; editing and completing happen in the task detail sheet -->
+                <DashboardTaskList v-if="tasks.data.length" class="md:hidden" :tasks="tasks.data" :show-assignee="isAdmin" @select="openTaskDetail" />
+                <div v-else class="flex flex-col items-center gap-4 py-10 md:hidden">
+                    <Notebook />
+                    <p class="text-sm text-neutral-600">You have no assigned Task yet.</p>
+                </div>
             </div>
 
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="text-xs text-gray-500 dark:text-gray-400">Showing {{ tasks.from ?? 0 }}–{{ tasks.to ?? 0 }} of {{ tasks.total }}</p>
                 <div class="flex items-center gap-2">
                     <PageSizeDropdown :model-value="tasks.per_page" @update:model-value="handlePerPageChange" />
@@ -362,6 +405,7 @@ function openDeleteDialog(task: Task) {
             </div>
         </div>
 
+        <TaskDetailSheet v-model:open="detailOpen" :task="selectedTask" @edit="openEditDialog" />
         <CreateTaskDialog v-model:open="taskDialogOpen" :task="editingTask" />
         <DeleteTaskDialog v-model:open="deleteDialogOpen" :task="deletingTask" />
         <FilterTasksDialog v-model:open="filterDialogOpen" :filters="filters" @apply="applyFilters" />
