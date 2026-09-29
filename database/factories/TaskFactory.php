@@ -25,6 +25,7 @@ class TaskFactory extends Factory
             'priority' => fake()->randomElement(['Low', 'Normal', 'High', 'Urgent']),
             'status' => fake()->randomElement(['Pending', 'In Progress', 'Completed']),
             'user_id' => User::factory(),
+            'assign_to' => User::factory(),
         ];
     }
 }

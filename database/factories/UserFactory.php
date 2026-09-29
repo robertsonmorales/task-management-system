@@ -35,6 +35,16 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user has the Admin role.
+     */
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'user_role_id' => 1,
+        ]);
+    }
+
+    /**
      * Indicate that the model's email address should be unverified.
      */
     public function unverified(): static

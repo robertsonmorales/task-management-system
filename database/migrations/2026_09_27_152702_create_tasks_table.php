@@ -17,7 +17,7 @@ return new class extends Migration
             $table->date('due_date');
             $table->enum('priority', ['Low', 'Normal', 'High', 'Urgent'])->default('Normal');
             $table->text('task_description', 5000);
-            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade')->comment('as created_by');
             $table->timestamps();
         });
     }
